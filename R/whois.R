@@ -8,94 +8,119 @@
 #' IANA root files: https://www.iana.org/domains/root/files
 #'
 
+#' How to generate validwords from previos db
+#' kk <- processWhois(filepath)
+#' kkk <- sapply(names(kk), function(x) length(kk[[x]]))
+#' k2 <- sapply(names(kkk[kkk>0]), function(x) names(kk[[x]][[2]]))
+#' cat(paste("\"", unique(unlist(k2)), "\"", collapse = ",", sep = ""))
+
 
 #' Whois Parser help
 #' RIPE Database Reference Manual: ftp://ftp.ripe.net/ripe/docs/ripe-252.txt
 #' APNIC Guide: https://www.apnic.net/manage-ip/using-whois/guide/
 
 
-stopwords <- c("as-block", "as-set", "aut-num", "domain", "filter-set","inet6num",
-               "inetnum", "inet-rtr", "irt", "key-cert","limerick", "mntner", "peering-set",
-               "person", "role", "route", "route6", "route-set", "rtr-set")
-stopwords <- stringr::str_replace(stopwords,"-",".")
-
-# How to generate validwords from previos db
-# kk <- processWhois(filepath)
-# kkk <- sapply(names(kk), function(x) length(kk[[x]]))
-# k2 <- sapply(names(kkk[kkk>0]), function(x) names(kk[[x]][[2]]))
-# cat(paste("\"", unique(unlist(k2)), "\"", collapse = ",", sep = ""))
-validwords <- c("descr","country","members","mbrs.by.ref","remarks","tech.c","admin.c","notify",
-                "mnt.lower","mnt.by","changed","source","as.set","as.name","member.of","import",
-                "export","default","cross.mnt","cross.nfy","mnt.routes","mnt.irt","aut.num",
-                "netname","geoloc","language","rev.srv","status","inet6num","inetnum","alias",
-                "local.as","ifaddr","peer","mp.peer","inet.rtr","method","owner","fingerpr",
-                "certif","key.cert","upd.to","mnt.nfy","auth","abuse.mailbox","referral.by",
-                "mntner","origin","holes","inject","aggr.mtd","aggr.bndry","export.comps",
-                "components","route","org","route6","mp.members","route.set")
-validwords <- unique(c(stopwords,validwords))
-
 # Read file line by line
 filepath <- "../data/arin.db"
 
 
 processWhois <-  function(filepath) {
-  # New whois data base
-  whois.db <- list()
-  whois.db <- lapply(stringr::str_replace(stopwords,"-","."), function(x) list())
-  names(whois.db) <- stopwords
-
-  # Parse raw file
   i <- 1
+  # Init local variables
   newobject <- TRUE
   current.obj <- ""
   current.obj.type <- ""
   current.var <- ""
   current.var.type <- ""
 
+  # Standard words (except nonstdwords)
+  stopwords <- c("as-block", "as-set", "aut-num", "domain", "filter-set","inet6num",
+                 "inetnum", "inet-rtr", "irt", "key-cert","limerick", "mntner", "peering-set",
+                 "person", "role", "route", "route6", "route-set", "rtr-set")
+  stopwords <- stringr::str_replace(stopwords,"-",".")
+  validwords <- c("descr","country","members","mbrs.by.ref","remarks","tech.c","admin.c","notify",
+                  "mnt.lower","mnt.by","changed","source","as.set","as.name","member.of","import",
+                  "export","default","cross.mnt","cross.nfy","mnt.routes","mnt.irt","aut.num",
+                  "netname","geoloc","language","rev.srv","status","inet6num","inetnum","alias",
+                  "local.as","ifaddr","peer","mp.peer","inet.rtr","method","owner","fingerpr",
+                  "certif","key.cert","upd.to","mnt.nfy","auth","abuse.mailbox","referral.by",
+                  "mntner","origin","holes","inject","aggr.mtd","aggr.bndry","export.comps",
+                  "components","route","org","route6","mp.members","route.set")
+  nonstdwords <- c("type")
+  validwords <- unique(c(stopwords,validwords, nonstdwords))
+
+  # New whois data base
+  whois.db <- list()
+  whois.db <- lapply(stringr::str_replace(stopwords,"-","."), function(x) list())
+  names(whois.db) <- stopwords
+
+  # Parse raw file
   con = file(filepath, "r")
   while (TRUE) {
-    # if ((current.var.type == "as.set") &&
-    #     (length(whois.db[[current.obj.type]]) + 1) %in% c(1825)) {
+    # XXX: Used to detect non-standard objects
+    # if (i %in% c(10,535)) {
     #   dummy <- NA
     # }
 
-    # if (i == 42365) {
-    #   dummy <- NA
-    # }
     line = readLines(con, n = 1)
+
+    # Skip special lines need special treatment
+
+    ## Last line: save last object and break
     if (length(line) == 0) {
-      # Save last object
       whois.db[[current.obj.type]][[length(whois.db[[current.obj.type]]) + 1]] <- current.obj
       break
     }
-    if (nchar(line) == 0) {
-      newobject <- TRUE
+    ## Empty line, usually between two objects
+    if ((length(line == 1)) && (nchar(line) == 0)) {
       next
     }
-    # print(line)
+    ## Skip comments
+    if (stringr::str_sub(line, 1, 1) == "#") {
+      next
+    }
 
     # New line pre-process
     if (stringr::str_detect(line, ":")) {
+      # Maybe it's a variable, let's split just in case
       line <- c(stringr::str_replace(stringr::str_sub(line, 1, stringr::str_locate(line, ":")[1] - 1),"-","."),
                 stringr::str_trim(stringr::str_sub(line, stringr::str_locate(line, ":")[1] + 1, nchar(line))))
-      if (!(line[1] %in% validwords)) {
-        line <- stringr::str_trim(paste(line, collapse = ":"))
+      # if line[1] is in current.obj & not stopword -> paste-text
+      # if line[1] is in current.obj & stopword -> split
+      # if line[1] isn't in current.obj & not stopword -> paste-all
+      # if line[1] isn't in current.obj & stopword -> split
+      if (line[1] %in% names(current.obj)) {
+        if (line[1] %in% stopwords) {
+          # Variable for new object, same objtype
+          newobject <- TRUE
+        } else {
+          # variable for current object
+          newobject <- FALSE
+        }
       } else {
-        if (current.obj.type != line[1] && !newobject && i > 1) {
-          if (nchar(current.obj[[line[1]]]) > 0) {
-            line <- line[2]
+        if (line[1] %in% stopwords) {
+          # Variable for new object, different objtype
+          newobject <- TRUE
+        } else {
+          # non-standard or more info with char ":" inside
+          if (line[1] %in% validwords) {
+            # Non-standard attribute for this object
+            print("WARNING: Non-standard attribute!")
           }
+          # More info for current variable
+          line <- stringr::str_trim(line[2])
+          newobject <- FALSE
         }
       }
     } else {
+      # It's more text for current variable
       line <- stringr::str_trim(line)
+      newobject <- FALSE
     }
-    newobject <- FALSE
 
     switch(as.character(length(line)),
             "1" = {
-              # More info for current variable
-              #  - add line.txt to current.var
+              # More info for current variable: add line.txt to current.var
               if (line != "") {
                 current.var[2] <- paste(current.var[2],
                                         line, sep = "\n")
@@ -107,24 +132,32 @@ processWhois <-  function(filepath) {
               current.var[1] <- line[1]
               current.var[2] <- line[2]
               current.var.type <- current.var[1]
-              if (current.var.type %in% stopwords) {
-                # New Object
-                #  - save current.obj in whois.db
+              # if (current.var.type %in% stopwords) {
+              if (newobject) {
+              # Save current.obj in whois.db
                 whois.db[[current.obj.type]][[length(whois.db[[current.obj.type]]) + 1]] <- current.obj
                 # Initiate current object
                 current.obj.type <- current.var.type
                 current.obj <- newWhoisObject(current.var)
+                # XXX: Used to detect non-standard objects
                 print(paste("Element:", i))
                 i <- i + 1
               } else {
-                # New variable
-                #  - add current.var to current.obj
+                # New variable: add current.var to current.obj
                 current.obj[[current.var.type]] <- current.var[2]
               }
             },
-            {print("default case")})
+            {
+              # XXX: Used to detect non-standard objects
+              print("default case")
+            }
+           )
   }
   close(con)
+
+  # Tidy data
+  whois.db <- lapply(stopwords, function(x) x = as.data.frame(dplyr::bind_rows(whois.db[[x]])))
+  names(whois.db) <- stopwords
 
   return(whois.db)
 }
@@ -135,9 +168,11 @@ newWhoisObject <- function(cvar = "") {
          "as.block" = {
            wo <- data.frame(objtype = cvar[1],
                             "as.block" = cvar[2],
+                            type = "",
                             descr = "",
                             country = "",
                             remarks = "",
+                            org = "",
                             tech.c = "",
                             admin.c = "",
                             notify = "",
@@ -171,12 +206,14 @@ newWhoisObject <- function(cvar = "") {
                             "aut.num" = cvar[2],
                             as.name = "",
                             descr = "",
+                            status = "",
                             country = "",
                             member.of = "",
                             import = "",
                             export = "",
                             default = "",
                             remarks = "",
+                            org = "",
                             admin.c = "",
                             tech.c = "",
                             upd.to = "",
@@ -196,6 +233,7 @@ newWhoisObject <- function(cvar = "") {
            wo <- data.frame(objtype = cvar[1],
                             "domain" = cvar[2],
                             descr = "",
+                            org = "",
                             country = "",
                             admin.c = "",
                             tech.c = "",
@@ -234,6 +272,7 @@ newWhoisObject <- function(cvar = "") {
                             netname = "",
                             descr = "",
                             country = "",
+                            org = "",
                             geoloc = "",
                             language = "",
                             admin.c = "",
@@ -245,6 +284,7 @@ newWhoisObject <- function(cvar = "") {
                             mnt.by = "",
                             mnt.lower = "",
                             mnt.irt = "",
+                            mnt.routes = "",
                             changed = "",
                             source = "",
                             stringsAsFactors = F)
@@ -255,6 +295,7 @@ newWhoisObject <- function(cvar = "") {
                             netname = "",
                             descr = "",
                             country = "",
+                            org = "",
                             geoloc = "",
                             language = "",
                             admin.c = "",
@@ -300,6 +341,7 @@ newWhoisObject <- function(cvar = "") {
                             abuse.mailbox = "",
                             signature = "",
                             encryption = "",
+                            org = "",
                             admin.c = "",
                             tech.c = "",
                             auth = "",
@@ -316,6 +358,7 @@ newWhoisObject <- function(cvar = "") {
                             "key.cert" = cvar[2],
                             method = "",
                             owner = "",
+                            org = "",
                             fingerpr = "",
                             certif = "",
                             remarks = "",
@@ -346,6 +389,7 @@ newWhoisObject <- function(cvar = "") {
                             "mntner" = cvar[2],
                             descr = "",
                             country = "",
+                            org = "",
                             admin.c = "",
                             tech.c = "",
                             upd.to = "",
@@ -379,6 +423,8 @@ newWhoisObject <- function(cvar = "") {
          "person" = {
            wo <- data.frame(objtype = cvar[1],
                             "person" = cvar[2],
+                            org = "",
+                            descr = "",
                             address = "",
                             country = "",
                             phone = "",
@@ -388,6 +434,8 @@ newWhoisObject <- function(cvar = "") {
                             remarks = "",
                             notify = "",
                             abuse.mailbox = "",
+                            admin.c = "",
+                            tech.c = "",
                             mnt.by = "",
                             changed = "",
                             source = "",
@@ -397,6 +445,7 @@ newWhoisObject <- function(cvar = "") {
            wo <- data.frame(objtype = cvar[1],
                             "role" = cvar[2],
                             address = "",
+                            org = "",
                             country = "",
                             phone = "",
                             fax.no = "",
@@ -406,6 +455,7 @@ newWhoisObject <- function(cvar = "") {
                             tech.c = "",
                             nic.hdl = "",
                             remarks = "",
+                            descr = "",
                             notify = "",
                             abuse.mailbox = "",
                             mnt.by = "",
@@ -435,6 +485,7 @@ newWhoisObject <- function(cvar = "") {
                             mnt.lower = "",
                             mnt.routes = "",
                             mnt.by = "",
+                            org = "",
                             changed = "",
                             source = "",
                             stringsAsFactors = F)
