@@ -21,7 +21,7 @@
 
 
 # Read file line by line
-filepath <- "../data/arin.db"
+# filepath <- "../data/arin.db"
 
 
 processWhois <-  function(filepath) {
@@ -186,6 +186,7 @@ newWhoisObject <- function(cvar = "") {
            wo <- data.frame(objtype = cvar[1],
                             "as.set" = cvar[2],
                             descr = "",
+                            org = "",
                             country = "",
                             members = "",
                             mbrs.by.ref = "",
@@ -308,6 +309,7 @@ newWhoisObject <- function(cvar = "") {
                             mnt.lower = "",
                             mnt.routes = "",
                             mnt.irt = "",
+                            abuse.mailbox = "",
                             changed = "",
                             source = "",
                             stringsAsFactors = F)
@@ -335,6 +337,7 @@ newWhoisObject <- function(cvar = "") {
            wo <- data.frame(objtype = cvar[1],
                             "irt" = cvar[2],
                             address = "",
+                            country = "",
                             phone = "",
                             fax.no = "",
                             e.mail = "",
@@ -359,6 +362,7 @@ newWhoisObject <- function(cvar = "") {
                             method = "",
                             owner = "",
                             org = "",
+                            country = "",
                             fingerpr = "",
                             certif = "",
                             remarks = "",
