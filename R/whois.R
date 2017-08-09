@@ -1,29 +1,118 @@
+#'
+#' IANA root files: https://www.iana.org/domains/root/files
+#'
+
+
+
 #' RIPE: ftp://ftp.ripe.net/ripe/dbase/split/
 #' APNIC: https://ftp.apnic.net/apnic/whois/
 #' ARIN: https://ftp.arin.net/pub/rr/
 #' AFRINIC: ftp://ftp.afrinic.net/pub/dbase/
 #' LACNIC: ?? http://www.lacnic.net/en/web/lacnic/manual-8
 #' Others: http://www.irr.net/docs/list.html
-#'
-#' IANA root files: https://www.iana.org/domains/root/files
-#'
 
-#' How to generate validwords from previos db
-#' kk <- processWhois(filepath)
-#' kkk <- sapply(names(kk), function(x) length(kk[[x]]))
-#' k2 <- sapply(names(kkk[kkk>0]), function(x) names(kk[[x]][[2]]))
-#' cat(paste("\"", unique(unlist(k2)), "\"", collapse = ",", sep = ""))
+validRIRNames <- function() {
+  vnames <- c("ripe",
+              "apnic",
+              "arin",
+              "afrinic",
+              "lacnic",
+              "others")
+  return(vnames)
+}
+
+validDataNames <- function() {
+  vnames <- c("as-block",
+              "as-set",
+              "aut-num",
+              "filter-set",
+              "domain",
+              "inet-rtr",
+              "inet6num",
+              "inetnum",
+              "irt",
+              "key-cert",
+              "mntner",
+              "organisation",
+              "peering-set",
+              "person",
+              "role",
+              "route-set",
+              "route",
+              "route6",
+              "rtr-set")
+  return(vnames)
+}
+
+updateRawData <- function(db = "all") {
+  downloadRawData <- function(db) {
+    if ("ripe" %in% db) {
+      for (vn in validDataNames()) {
+        download.file(url = paste("ftp://ftp.ripe.net/ripe/dbase/split/ripe.db.", vn, ".gz", sep = ""),
+                      destfile = paste("./dataraw/ripe.", vn, ".db.gz", sep = ""))
+      }
+    }
+    if ("apnic" %in% db) {
+      for (vn in validDataNames()[!validDataNames() %in% c("person")]) {
+        download.file(url = paste("https://ftp.apnic.net/apnic/whois/apnic.db.", vn, ".gz", sep = ""),
+                      destfile = paste("./dataraw/apnic.", vn, ".db.gz", sep = ""))
+      }
+    }
+    if ("arin" %in% db) {
+      download.file(url = "https://ftp.arin.net/pub/rr/arin.db", destfile = "./dataraw/arin.db")
+    }
+    if ("afrinic" %in% db) {
+      download.file(url = "ftp://ftp.afrinic.net/pub/dbase/afrinic.db.gz", destfile = "./dataraw/afrinic.db.gz")
+    }
+    if ("lacnic" %in% db) {
+      # TODO
+    }
+    if ("others" %in% db) {
+      # TODO
+    }
+  }
+  db <- tolower(db)
+  if ((db %in% validRIRNames()) || db == "all") {
+    if ((length(db) == 1) && (db != "all")) {
+      # download db
+      downloadRawData(db)
+    } else if ((length(db) > 1) ||
+               ((length(db) == 1) && (db == "all"))) {
+      if ((length(db) == 1) && (db == "all")) {
+        db <- validRIRNames()
+      }
+      # for each db: download
+      for (vn in db) {
+        downloadRawData(vn)
+      }
+    } else {
+      print(paste("Please, use valid names: all",validRIRNames(), collapse = ", "))
+      return()
+    }
+  } else {
+    print(paste("Please, use valid names: 'all' or '",paste(validRIRNames(), collapse = "', '"), "'.", sep = ""))
+    return()
+  }
+  # unzip
+  sapply(list.files(path = "./dataraw/", pattern = "*.gz", full.names = T), R.utils::gunzip)
+}
+
+getWhois <- function(db = "all") {
+#  updateRawData(db)
+  i <- 1
+  whois.db <- list()
+  for (rawfile in list.files(path = "./dataraw/", pattern = "*.db", full.names = T)) {
+    whois.db[[i]] <- processWhois(rawfile)
+    i <- i + 1
+    save(whois.db, file = "./dataraw/whois.db.rda")
+  }
+  return(whois.db)
+}
 
 
 #' Whois Parser help
 #' RIPE Database Reference Manual: ftp://ftp.ripe.net/ripe/docs/ripe-252.txt
 #' APNIC Guide: https://www.apnic.net/manage-ip/using-whois/guide/
-
-
-# Read file line by line
-# filepath <- "../data/arin.db"
-
-
 processWhois <-  function(filepath) {
   i <- 1
   # Init local variables
@@ -45,7 +134,8 @@ processWhois <-  function(filepath) {
                   "local.as","ifaddr","peer","mp.peer","inet.rtr","method","owner","fingerpr",
                   "certif","key.cert","upd.to","mnt.nfy","auth","abuse.mailbox","referral.by",
                   "mntner","origin","holes","inject","aggr.mtd","aggr.bndry","export.comps",
-                  "components","route","org","route6","mp.members","route.set")
+                  "components","route","org","route6","mp.members","route.set","created",
+                  "last.modified")
   nonstdwords <- c("type")
   validwords <- unique(c(stopwords,validwords, nonstdwords))
 
@@ -105,7 +195,9 @@ processWhois <-  function(filepath) {
           # non-standard or more info with char ":" inside
           if (line[1] %in% validwords) {
             # Non-standard attribute for this object
+            print(paste("Element:", i))
             print("WARNING: Non-standard attribute!")
+            print(current.obj)
           }
           # More info for current variable
           line <- stringr::str_trim(line[2])
@@ -140,7 +232,7 @@ processWhois <-  function(filepath) {
                 current.obj.type <- current.var.type
                 current.obj <- newWhoisObject(current.var)
                 # XXX: Used to detect non-standard objects
-                print(paste("Element:", i))
+                # print(paste("Element:", i))
                 i <- i + 1
               } else {
                 # New variable: add current.var to current.obj
@@ -256,6 +348,7 @@ newWhoisObject <- function(cvar = "") {
                             "filter.set" = cvar[2],
                             descr = "",
                             filter = "",
+                            org = "",
                             mp.filter = "",
                             remarks = "",
                             tech.c = "",
@@ -263,6 +356,8 @@ newWhoisObject <- function(cvar = "") {
                             notify = "",
                             mnt.by = "",
                             mnt.lower = "",
+                            created = "",
+                            last.modified = "",
                             changed = "",
                             source = "",
                             stringsAsFactors = F)
@@ -325,10 +420,13 @@ newWhoisObject <- function(cvar = "") {
                             mp.peer = "",
                             member.of = "",
                             remarks = "",
+                            org = "",
                             admin.c = "",
                             tech.c = "",
                             notify = "",
                             mnt.by = "",
+                            created = "",
+                            last.modified = "",
                             changed = "",
                             source = "",
                             stringsAsFactors = F)
